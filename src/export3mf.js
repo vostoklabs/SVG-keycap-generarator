@@ -26,9 +26,17 @@ function meshXml(geom) {
 const color3mf = (hex) => (hex.replace('#', '#').toUpperCase() + 'FF').replace('##', '#');
 
 /**
- * Build a two-material 3MF: the keycap and the legend as separate colored parts,
- * assembled (via components) so they stay aligned and each maps to a filament
- * in PrusaSlicer / OrcaSlicer / Bambu Studio.
+ * Build a two-material 3MF that loads as a SINGLE model with two parts.
+ *
+ *  - The geometry is structured as object 4 (a <components> wrapper) referencing
+ *    object 2 (keycap) and object 3 (legend). Bambu Studio / OrcaSlicer pick this
+ *    up as "one object with two parts", matching the user's preferred import UX.
+ *  - A <basematerials> resource with per-object pid/pindex gives spec-compliant
+ *    slicers (PrusaSlicer + the 3MF base extension) a color hint.
+ *  - Bambu Studio / OrcaSlicer ignore basematerials for filament assignment and
+ *    instead read Metadata/model_settings.config, where we map each part to a
+ *    distinct extruder slot (1 = keycap, 2 = legend). Without this file both
+ *    parts default to extruder 1 and render in the same color.
  */
 export function buildThreeMF(keycapGeom, logoGeom, { keycapColor, logoColor }) {
   const model =
@@ -50,11 +58,30 @@ export function buildThreeMF(keycapGeom, logoGeom, { keycapColor, logoColor }) {
     `<build><item objectid="4"/></build>` +
     `</model>`;
 
+  // Bambu/Orca-flavored metadata: assign each part to its own filament slot.
+  const modelSettings =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<config>` +
+    `<object id="4">` +
+    `<metadata key="name" value="keycap"/>` +
+    `<metadata key="extruder" value="1"/>` +
+    `<part id="2" subtype="normal_part">` +
+    `<metadata key="name" value="Keycap"/>` +
+    `<metadata key="extruder" value="1"/>` +
+    `</part>` +
+    `<part id="3" subtype="normal_part">` +
+    `<metadata key="name" value="Legend"/>` +
+    `<metadata key="extruder" value="2"/>` +
+    `</part>` +
+    `</object>` +
+    `</config>`;
+
   const contentTypes =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
     `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
     `<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>` +
+    `<Default Extension="config" ContentType="text/xml"/>` +
     `</Types>`;
 
   const rels =
@@ -69,6 +96,7 @@ export function buildThreeMF(keycapGeom, logoGeom, { keycapColor, logoColor }) {
       '[Content_Types].xml': strToU8(contentTypes),
       '_rels/.rels': strToU8(rels),
       '3D/3dmodel.model': strToU8(model),
+      'Metadata/model_settings.config': strToU8(modelSettings),
     },
     { level: 6 }
   );
