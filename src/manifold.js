@@ -63,75 +63,43 @@ export function extrudePrism(contours, bottomZ, height) {
  * Extrude a flat 2-D BufferGeometry (z ≈ 0, as produced by SVGLoader.pointsToStroke)
  * into a watertight solid Manifold spanning bottomZ .. bottomZ + height.
  *
- * Algorithm:
- *  1. Duplicate vertices: first N at bottomZ, next N at bottomZ+height.
- *  2. Bottom cap  – reversed triangle winding → normals point down.
- *  3. Top    cap  – original winding → normals point up.
- *  4. Boundary edges (shared by exactly one triangle) → quad side walls.
+ * Each triangle of the ribbon mesh becomes a tiny 2-D polygon contour, forced to CCW
+ * winding. Feeding the whole set to CrossSection with the NonZero fill rule lets
+ * Manifold union all overlapping triangles into one clean filled region — robust to
+ * the miter-join self-overlaps that pointsToStroke produces (which broke the previous
+ * boundary-edge wall builder, where shared edges got count ≥ 2 and walls never closed).
  */
 export function extrudeStrokeGeom(flatGeom, bottomZ, height) {
-  const { Manifold, Mesh } = api;
+  const { CrossSection } = api;
 
-  // Ensure we have an indexed geometry for correct boundary-edge detection
-  const g = flatGeom.index ? flatGeom : weldPositions(flatGeom);
-  const srcPos = g.getAttribute('position');
-  const srcIdx = g.getIndex().array;
+  const pos = flatGeom.getAttribute('position');
+  const idx = flatGeom.getIndex();
 
-  const nVerts = srcPos.count;
-  const nTris  = srcIdx.length / 3;
+  const contours = [];
+  const getTri = idx
+    ? (t) => [idx.array[t * 3], idx.array[t * 3 + 1], idx.array[t * 3 + 2]]
+    : (t) => [t * 3, t * 3 + 1, t * 3 + 2];
+  const nTris = (idx ? idx.array.length : pos.count) / 3;
 
-  // Build 2·N vertex buffer: lower half at bottomZ, upper half at bottomZ+height
-  const verts = new Float32Array(nVerts * 2 * 3);
-  for (let i = 0; i < nVerts; i++) {
-    const x = srcPos.getX(i), y = srcPos.getY(i);
-    // bottom
-    verts[i * 3]     = x;  verts[i * 3 + 1] = y;  verts[i * 3 + 2] = bottomZ;
-    // top
-    verts[(nVerts + i) * 3]     = x;
-    verts[(nVerts + i) * 3 + 1] = y;
-    verts[(nVerts + i) * 3 + 2] = bottomZ + height;
-  }
-
-  // Count how many triangles share each undirected edge
-  const edgeCnt = new Map();
   for (let t = 0; t < nTris; t++) {
-    for (let e = 0; e < 3; e++) {
-      const a = srcIdx[t * 3 + e], b = srcIdx[t * 3 + (e + 1) % 3];
-      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-      edgeCnt.set(key, (edgeCnt.get(key) || 0) + 1);
-    }
+    const [ia, ib, ic] = getTri(t);
+    const ax = pos.getX(ia), ay = pos.getY(ia);
+    const bx = pos.getX(ib), by = pos.getY(ib);
+    const cx = pos.getX(ic), cy = pos.getY(ic);
+    // Signed area: positive = CCW, negative = CW. Skip degenerate triangles.
+    const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+    if (Math.abs(area) < 1e-12) continue;
+    contours.push(area > 0
+      ? [[ax, ay], [bx, by], [cx, cy]]
+      : [[ax, ay], [cx, cy], [bx, by]]);
   }
 
-  const tris = [];
-
-  // Bottom cap (reversed winding → face normal –Z)
-  for (let t = 0; t < nTris; t++) {
-    tris.push(srcIdx[t * 3 + 2], srcIdx[t * 3 + 1], srcIdx[t * 3]);
+  if (!contours.length) {
+    throw new Error('Stroke geometry produced no usable triangles.');
   }
 
-  // Top cap (original winding → face normal +Z)
-  for (let t = 0; t < nTris; t++) {
-    tris.push(nVerts + srcIdx[t * 3], nVerts + srcIdx[t * 3 + 1], nVerts + srcIdx[t * 3 + 2]);
-  }
-
-  // Side walls for every directed boundary edge a→b
-  // Outward normal is to the right of (a→b) for CCW-wound faces → quad (a, b, b+N, a+N)
-  for (let t = 0; t < nTris; t++) {
-    for (let e = 0; e < 3; e++) {
-      const a = srcIdx[t * 3 + e], b = srcIdx[t * 3 + (e + 1) % 3];
-      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-      if (edgeCnt.get(key) === 1) {
-        tris.push(a, b, nVerts + b);
-        tris.push(a, nVerts + b, nVerts + a);
-      }
-    }
-  }
-
-  const mesh = new Mesh({
-    numProp: 3,
-    vertProperties: verts,
-    triVerts: new Uint32Array(tris),
-  });
-
-  return Manifold.ofMesh(mesh);
+  const cs = new CrossSection(contours, 'NonZero');
+  const solid = cs.extrude(height).translate([0, 0, bottomZ]);
+  cs.delete();
+  return solid;
 }

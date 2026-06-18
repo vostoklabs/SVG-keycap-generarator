@@ -15,7 +15,7 @@ function iconsManifestPlugin() {
     readdirSync(iconsDir)
       .filter((f) => /\.svg$/i.test(f))
       .sort()
-      .map((f) => ({ name: pretty(f), file: `/icons/${f}` }));
+      .map((f) => ({ name: pretty(f), file: `icons/${f}` }));
 
   return {
     name: 'icons-manifest',
@@ -38,6 +38,9 @@ function iconsManifestPlugin() {
 }
 
 export default defineConfig({
+  // Relative asset URLs so the build works under any subpath (e.g. GitHub Pages
+  // serves this app at /<repo-name>/, not at the domain root).
+  base: './',
   plugins: [iconsManifestPlugin()],
   server: { open: true },
   // manifold-3d ships its own WASM; let it load the asset directly instead of prebundling.

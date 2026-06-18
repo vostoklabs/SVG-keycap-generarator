@@ -6,6 +6,7 @@ import { FONT_OPTIONS, importFontFile, parseLetter } from './letter.js';
 import { buildBodies } from './geometry.js';
 import { initManifold } from './manifold.js';
 import { buildThreeMF } from './export3mf.js';
+import { LUCIDE_ICONS, buildSvg, svgDataUrl } from './lucideIcons.js';
 
 const $ = (id) => document.getElementById(id);
 const busyEl = $('busy');
@@ -177,7 +178,7 @@ async function selectIcon(el, getText, name) {
   }
 }
 
-function addIcon(thumbUrl, getText, name) {
+function makeIconEl(thumbUrl, getText, name) {
   const el = document.createElement('div');
   el.className = 'icon';
   el.title = name;
@@ -186,19 +187,19 @@ function addIcon(thumbUrl, getText, name) {
   img.alt = name;
   el.appendChild(img);
   el.addEventListener('click', () => selectIcon(el, getText, name));
-  $('gallery').appendChild(el);
   return el;
 }
 
 function setLegendMode(mode) {
-  const isLetter = mode === 'letter';
   currentMode = mode;
-  $('iconMode').classList.toggle('active', !isLetter);
-  $('letterMode').classList.toggle('active', isLetter);
-  $('iconPanel').hidden = isLetter;
-  $('letterPanel').hidden = !isLetter;
+  $('iconMode').classList.toggle('active', mode === 'icon');
+  $('uploadMode').classList.toggle('active', mode === 'upload');
+  $('letterMode').classList.toggle('active', mode === 'letter');
+  $('iconPanel').hidden = mode !== 'icon';
+  $('uploadPanel').hidden = mode !== 'upload';
+  $('letterPanel').hidden = mode !== 'letter';
 
-  if (isLetter) {
+  if (mode === 'letter') {
     selectLetter();
   } else if (lastIconSelection) {
     selectIcon(lastIconSelection.el, lastIconSelection.getText, lastIconSelection.name);
@@ -229,6 +230,7 @@ function addFontOption(font) {
 for (const font of FONT_OPTIONS) addFontOption(font);
 
 $('iconMode').addEventListener('click', () => setLegendMode('icon'));
+$('uploadMode').addEventListener('click', () => setLegendMode('upload'));
 $('letterMode').addEventListener('click', () => setLegendMode('letter'));
 $('letterText').addEventListener('input', selectLetter);
 $('fontSelect').addEventListener('change', selectLetter);
@@ -250,14 +252,154 @@ $('fontUpload').addEventListener('change', async (e) => {
   }
 });
 
-async function loadGallery() {
-  const list = await fetch('icons-manifest.json').then((r) => r.json()).catch(() => []);
-  let first = null;
-  for (const { name, file } of list) {
-    const el = addIcon(file, () => fetch(file).then((r) => r.text()), name);
-    if (!first) first = el;
+// Curated set shown first when no search is active — picked for keycap legends:
+// clipboard/edit ops, media keys, navigation, and common app-launcher symbols.
+const POPULAR_LUCIDE = [
+  // File & clipboard
+  'copy', 'clipboard', 'clipboard-paste', 'scissors', 'trash-2', 'save',
+  'file', 'files', 'folder', 'folder-open', 'archive', 'download', 'upload',
+  // Edit
+  'undo-2', 'redo-2', 'search', 'replace', 'eraser', 'pencil', 'type',
+  'bold', 'italic', 'underline',
+  // Navigation
+  'home', 'arrow-up', 'arrow-down', 'arrow-left', 'arrow-right',
+  'corner-down-left', 'chevron-up', 'chevron-down',
+  // Keys & input
+  'keyboard', 'mouse', 'command', 'delete',
+  // Media
+  'play', 'pause', 'skip-back', 'skip-forward', 'volume-2', 'volume-x',
+  'mic', 'mic-off', 'music', 'headphones',
+  // Display / system
+  'sun', 'moon', 'monitor', 'lock', 'unlock', 'eye', 'eye-off',
+  'power', 'wifi', 'bluetooth', 'battery',
+  // Apps
+  'terminal', 'code', 'settings', 'bell', 'calendar', 'mail',
+  'message-circle', 'phone', 'camera', 'image',
+  // Symbols & fun
+  'star', 'heart', 'bookmark', 'flag', 'check', 'x', 'plus', 'minus',
+  'refresh-cw', 'rotate-cw', 'flame', 'zap', 'rocket', 'ghost', 'skull',
+  'coffee', 'gamepad-2', 'trophy', 'crown',
+];
+
+const GALLERY_PAGE = 240;
+const galleryEl = $('gallery');
+const uploadGalleryEl = $('uploadGallery');
+const searchEl = $('iconSearch');
+const searchClearEl = $('iconSearchClear');
+const countEl = $('iconCount');
+
+let lucideShown = 0;       // how many items rendered for the current query
+let lucideMatches = [];    // current filtered Lucide list
+let moreBtn = null;
+
+function rankLucide(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    const popularSet = new Set(POPULAR_LUCIDE);
+    const popular = POPULAR_LUCIDE
+      .map((name) => LUCIDE_ICONS.find((ic) => ic.name === name))
+      .filter(Boolean);
+    const rest = LUCIDE_ICONS.filter((ic) => !popularSet.has(ic.name));
+    return popular.concat(rest);
   }
-  return list[0] ? { el: first, file: list[0].file, name: list[0].name } : null;
+  const out = [];
+  for (const ic of LUCIDE_ICONS) {
+    const i = ic.name.indexOf(q);
+    if (i === -1) continue;
+    // exact match → 0, starts-with → 1, contains → 2 (then alpha)
+    const rank = ic.name === q ? 0 : i === 0 ? 1 : 2;
+    out.push({ ic, rank });
+  }
+  out.sort((a, b) => a.rank - b.rank || a.ic.name.localeCompare(b.ic.name));
+  return out.map((o) => o.ic);
+}
+
+function renderLucidePage() {
+  if (moreBtn) { moreBtn.remove(); moreBtn = null; }
+  const end = Math.min(lucideShown + GALLERY_PAGE, lucideMatches.length);
+  const frag = document.createDocumentFragment();
+  for (let i = lucideShown; i < end; i++) {
+    const ic = lucideMatches[i];
+    const svgText = buildSvg(ic.node);
+    const el = makeIconEl(svgDataUrl(svgText), async () => svgText, ic.name);
+    frag.appendChild(el);
+  }
+  galleryEl.appendChild(frag);
+  lucideShown = end;
+
+  if (lucideShown < lucideMatches.length) {
+    moreBtn = document.createElement('button');
+    moreBtn.id = 'galleryMore';
+    moreBtn.type = 'button';
+    moreBtn.textContent = `Show ${Math.min(GALLERY_PAGE, lucideMatches.length - lucideShown)} more (${lucideMatches.length - lucideShown} hidden)`;
+    moreBtn.addEventListener('click', renderLucidePage);
+    galleryEl.appendChild(moreBtn);
+  }
+  updateCount();
+}
+
+function updateCount() {
+  const total = lucideMatches.length;
+  if (total === 0) {
+    countEl.textContent = 'No icons match.';
+  } else {
+    const visible = Math.min(lucideShown, total);
+    countEl.textContent = searchEl.value.trim()
+      ? `${total} match${total === 1 ? '' : 'es'}` + (visible < total ? ` · showing ${visible}` : '')
+      : `${total} icons` + (visible < total ? ` · showing ${visible}` : '');
+  }
+}
+
+function rebuildGallery() {
+  galleryEl.innerHTML = '';
+  lucideShown = 0;
+  lucideMatches = rankLucide(searchEl.value);
+  searchClearEl.style.display = searchEl.value ? 'block' : 'none';
+  renderLucidePage();
+}
+
+let searchTimer = null;
+searchEl.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(rebuildGallery, 80);
+});
+searchClearEl.addEventListener('click', () => {
+  searchEl.value = '';
+  rebuildGallery();
+  searchEl.focus();
+});
+
+function defaultLucideIcon() {
+  const first = LUCIDE_ICONS.find((ic) => ic.name === POPULAR_LUCIDE[0]) || LUCIDE_ICONS[0];
+  if (!first) return null;
+  const svgText = buildSvg(first.node);
+  // Find rendered tile so we can mark it active.
+  const idx = lucideMatches.indexOf(first);
+  const el = idx >= 0 && idx < lucideShown ? galleryEl.children[idx] : null;
+  return { el, getText: async () => svgText, name: first.name };
+}
+
+let uploadEmptyEl = null;
+function refreshUploadEmptyState() {
+  const empty = uploadGalleryEl.querySelectorAll('.icon').length === 0;
+  if (empty && !uploadEmptyEl) {
+    uploadEmptyEl = document.createElement('div');
+    uploadEmptyEl.id = 'uploadGalleryEmpty';
+    uploadEmptyEl.textContent = 'No SVGs yet. Drop files in public/icons/ or use the upload button.';
+    uploadGalleryEl.appendChild(uploadEmptyEl);
+  } else if (!empty && uploadEmptyEl) {
+    uploadEmptyEl.remove();
+    uploadEmptyEl = null;
+  }
+}
+
+async function loadBundledSvgs() {
+  const list = await fetch('icons-manifest.json').then((r) => r.json()).catch(() => []);
+  for (const { name, file } of list) {
+    const el = makeIconEl(file, () => fetch(file).then((r) => r.text()), name);
+    uploadGalleryEl.appendChild(el);
+  }
+  refreshUploadEmptyState();
 }
 
 $('upload').addEventListener('change', async (e) => {
@@ -265,10 +407,15 @@ $('upload').addEventListener('change', async (e) => {
   for (const file of e.target.files) {
     const text = await file.text();
     const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
-    const el = addIcon(url, async () => text, file.name.replace(/\.svg$/i, ''));
+    const el = makeIconEl(url, async () => text, file.name.replace(/\.svg$/i, ''));
+    uploadGalleryEl.appendChild(el);
     if (!firstEl) firstEl = el;
   }
-  if (firstEl) firstEl.click();
+  refreshUploadEmptyState();
+  if (firstEl) {
+    setLegendMode('upload');
+    firstEl.click();
+  }
   e.target.value = '';
 });
 
@@ -309,13 +456,13 @@ $('export').addEventListener('click', () => {
 
     $('meta').textContent = `Cap ${(meta.bbox.max[0] - meta.bbox.min[0]).toFixed(1)}×${(meta.bbox.max[1] - meta.bbox.min[1]).toFixed(1)}×${meta.topZ.toFixed(1)} mm · ${meta.triangles} tris · from ${meta.generatedFrom}`;
 
-    const firstIcon = await loadGallery();
-    if (firstIcon && currentMode === 'icon') {
-      selectIcon(firstIcon.el, () => fetch(firstIcon.file).then((r) => r.text()), firstIcon.name);
+    rebuildGallery();
+    loadBundledSvgs();
+    const first = defaultLucideIcon();
+    if (first && currentMode === 'icon') {
+      selectIcon(first.el || galleryEl.firstElementChild, first.getText, first.name);
     } else if (currentMode === 'letter') {
       selectLetter();
-    } else {
-      setStatus('Add SVG files to public/icons, or use Upload.');
     }
   } catch (e) {
     console.error(e);

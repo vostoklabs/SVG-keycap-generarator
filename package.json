@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.2",
+    "lucide": "^1.21.0",
     "manifold-3d": "^3.5.1",
     "three": "^0.169.0",
     "three-bvh-csg": "^0.0.16",
