@@ -22,7 +22,7 @@
         color: var(--text);
         font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         display: grid;
-        grid-template-columns: 1fr 340px;
+        grid-template-columns: 300px 1fr 340px;
         grid-template-rows: 100vh;
         overflow: hidden;
       }
@@ -37,12 +37,19 @@
         background: rgba(0,0,0,.6); padding: 6px 14px; border-radius: 20px;
         font-size: 12px; color: var(--text); display: none;
       }
-      aside {
+      /* Both sidebars share one look; only the divider side and scroll behaviour differ. */
+      .sidebar {
         background: var(--panel);
-        border-left: 1px solid var(--line);
-        overflow-y: auto;
         padding: 16px;
+        display: flex;
+        flex-direction: column;
       }
+      .sidebar.left { border-right: 1px solid var(--line); overflow-y: auto; }
+      .sidebar.right { border-left: 1px solid var(--line); overflow: hidden; }
+      /* The Legend section absorbs spare height so the right panel never scrolls as a whole;
+         only its icon gallery scrolls internally. Colors/Export/Support stay pinned below. */
+      .legend-section { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+      #iconPanel:not([hidden]) { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
       h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .2px; }
       .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
       .section { border-top: 1px solid var(--line); padding: 14px 0; }
@@ -87,7 +94,8 @@
       #iconCount { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
       #gallery {
         display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
-        max-height: 360px; overflow-y: auto; padding-right: 4px;
+        flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 4px;
+        align-content: start;
       }
       #gallery::-webkit-scrollbar { width: 8px; }
       #gallery::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
@@ -127,15 +135,21 @@
       .upload-cta svg { width: 18px; height: 18px; flex: 0 0 18px; }
       .upload-cta input { display: none; }
 
-      .row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-      .row label { flex: 0 0 88px; color: var(--muted); font-size: 12px; }
-      .row input[type=range] { flex: 1; accent-color: var(--accent); }
-      .row .val { flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
-      .row .val input {
-        width: 56px; background: var(--panel-2); border: 1px solid var(--line);
-        color: var(--text); border-radius: 6px; padding: 3px 6px; text-align: right;
-        font-variant-numeric: tabular-nums;
+      /* Placement rows: a fixed grid so label / slider / value / unit line up perfectly */
+      .prow {
+        display: grid;
+        grid-template-columns: 58px 1fr 46px 20px;
+        align-items: center; gap: 8px; margin-bottom: 9px;
       }
+      .prow > label { color: var(--muted); font-size: 12px; }
+      .prow input[type=range] { width: 100%; min-width: 0; accent-color: var(--accent); }
+      .prow input[type=number] {
+        width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+        color: var(--text); border-radius: 6px; padding: 4px 5px; text-align: right;
+        font: inherit; font-variant-numeric: tabular-nums;
+      }
+      .prow input[type=number]:disabled { opacity: .45; }
+      .prow .unit { font-size: 11px; color: var(--muted); }
       .field { display: grid; gap: 6px; margin-bottom: 10px; }
       .field label { color: var(--muted); font-size: 12px; }
       .field input, .field select {
@@ -148,7 +162,63 @@
         width: 34px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
         background: none; padding: 0; cursor: pointer;
       }
-      .check { display: flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
+      /* iOS-style toggle switches (mirror / shine-through) */
+      .switch-row {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        margin-top: 12px;
+      }
+      .switch-row .switch-label { font-size: 12.5px; color: var(--text); }
+      .toggle { position: relative; display: inline-block; width: 40px; height: 23px; flex: 0 0 40px; cursor: pointer; }
+      .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+      .toggle .slider {
+        position: absolute; inset: 0; background: var(--line); border-radius: 999px;
+        transition: background .18s ease;
+      }
+      .toggle .slider::before {
+        content: ""; position: absolute; height: 19px; width: 19px; left: 2px; top: 2px;
+        background: #fff; border-radius: 50%; transition: transform .18s ease;
+        box-shadow: 0 1px 2px rgba(0,0,0,.45);
+      }
+      .toggle input:checked + .slider { background: var(--accent-2); }
+      .toggle input:checked + .slider::before { transform: translateX(17px); }
+      .toggle input:focus-visible + .slider { box-shadow: 0 0 0 2px var(--accent); }
+      .switch-block { margin-top: 12px; }
+      .switch-block .switch-row { margin-top: 0; }
+      .switch-help { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+
+      /* Section header with an inline reset control */
+      .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .section-head .label { margin-bottom: 0; }
+      .reset-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
+        background: transparent; border: 1px solid var(--line); border-radius: 6px;
+        color: var(--muted); cursor: pointer; transition: color .12s, border-color .12s;
+      }
+      .reset-btn:hover { color: var(--accent); border-color: var(--accent); }
+      .reset-btn:active { transform: rotate(-30deg); }
+      .reset-btn svg { width: 13px; height: 13px; }
+
+      /* MakerWorld quality tip */
+      .callout {
+        display: flex; gap: 9px; align-items: flex-start;
+        background: var(--panel-2); border: 1px solid var(--line);
+        border-left: 3px solid var(--accent-2); border-radius: 8px;
+        padding: 10px 11px; margin-bottom: 16px;
+        font-size: 12.5px; line-height: 1.45; color: var(--text);
+      }
+      .callout svg { flex: 0 0 16px; width: 16px; height: 16px; color: var(--accent-2); margin-top: 1px; }
+
+      /* Support section */
+      .support-text { font-size: 12.5px; color: var(--text); line-height: 1.45; margin-bottom: 10px; }
+      .kofi-btn {
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        width: 100%; padding: 10px; border-radius: 9px;
+        background: #ff5e5b; color: #fff; text-decoration: none;
+        font-weight: 600; font-size: 13px; transition: filter .12s;
+      }
+      .kofi-btn:hover { filter: brightness(1.07); }
+      .kofi-btn svg { width: 16px; height: 16px; flex: 0 0 16px; }
 
       button.primary {
         width: 100%; padding: 11px; border: none; border-radius: 9px; cursor: pointer;
@@ -162,41 +232,82 @@
       .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
       code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
 
-      .kofi {
-        position: absolute; top: 14px; left: 14px; z-index: 5;
-        display: inline-flex; align-items: center; gap: 7px;
-        padding: 7px 12px;
-        background: rgba(29,32,39,.78); backdrop-filter: blur(4px);
-        border: 1px solid var(--line); border-radius: 20px; color: var(--muted);
-        text-decoration: none; font-size: 12px; font-weight: 500;
-        transition: color .12s, border-color .12s, background .12s;
-      }
-      .kofi:hover { color: #ff5e5b; border-color: #ff5e5b; background: rgba(29,32,39,.95); }
-      .kofi svg { flex: 0 0 16px; color: #ff5e5b; }
     </style>
   </head>
   <body>
+    <aside class="sidebar left">
+      <h1>Keycap Legend Generator</h1>
+      <div class="sub">Pick an icon or letter, size it, export a two-color 3MF.</div>
+
+      <div class="callout">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>For the best quality printed keycap, please use the print profile and instructions available on <a class="hint-link" href="https://makerworld.com/en/@Vostok_Labs/upload" target="_blank" rel="noopener">MakerWorld</a>.</span>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <span class="label">Placement &amp; size</span>
+          <button id="resetPlacement" class="reset-btn" type="button" title="Reset placement &amp; size to defaults" aria-label="Reset placement and size">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          </button>
+        </div>
+        <div class="prow">
+          <label for="size">Size</label>
+          <input id="size" type="range" min="3" max="16" step="0.1" value="8" />
+          <input id="sizeNum" type="number" step="0.1" />
+          <span class="unit">mm</span>
+        </div>
+        <div class="prow">
+          <label for="depth">Depth</label>
+          <input id="depth" type="range" min="0.2" max="1.5" step="0.05" value="0.5" />
+          <input id="depthNum" type="number" step="0.05" />
+          <span class="unit">mm</span>
+        </div>
+        <div class="prow">
+          <label for="rot">Rotation</label>
+          <input id="rot" type="range" min="-180" max="180" step="1" value="0" />
+          <input id="rotNum" type="number" step="1" />
+          <span class="unit">°</span>
+        </div>
+        <div class="prow">
+          <label for="offx">Nudge X</label>
+          <input id="offx" type="range" min="-5" max="5" step="0.1" value="0" />
+          <input id="offxNum" type="number" step="0.1" />
+          <span class="unit">mm</span>
+        </div>
+        <div class="prow">
+          <label for="offy">Nudge Y</label>
+          <input id="offy" type="range" min="-5" max="5" step="0.1" value="0" />
+          <input id="offyNum" type="number" step="0.1" />
+          <span class="unit">mm</span>
+        </div>
+        <div class="switch-row">
+          <span class="switch-label">Mirror horizontally</span>
+          <label class="toggle"><input id="mirror" type="checkbox" /><span class="slider"></span></label>
+        </div>
+        <div class="switch-block">
+          <div class="switch-row">
+            <span class="switch-label">Shine through</span>
+            <label class="toggle"><input id="through" type="checkbox" /><span class="slider"></span></label>
+          </div>
+          <p class="switch-help">Carves the icon all the way through the top of the keycap and prints the stem in the legend colour too. Print the legend and stem in transparent plastic (PLA or PETG) so the icon lights up.</p>
+        </div>
+      </div>
+    </aside>
+
     <div id="viewport">
-      <a id="kofi" class="kofi" href="https://ko-fi.com/vostoklabs" target="_blank" rel="noopener" title="Support this tool on Ko-fi">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
-          <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/>
-          <line x1="6" y1="2" x2="6" y2="4"/>
-          <line x1="10" y1="2" x2="10" y2="4"/>
-          <line x1="14" y1="2" x2="14" y2="4"/>
-        </svg>
-        Support on Ko-fi
-      </a>
       <div id="busy">generating…</div>
       <div id="hint">drag to orbit · scroll to zoom · right-drag to pan</div>
     </div>
 
-    <aside>
-      <h1>Keycap Legend Generator</h1>
-      <div class="sub">Pick an icon or letter, size it, export a two-color 3MF.</div>
-
-      <div class="section">
-        <div class="label">Legend</div>
+    <aside class="sidebar right">
+      <div class="section legend-section">
+        <div class="section-head">
+          <span class="label">Legend</span>
+          <button id="resetLegend" class="reset-btn" type="button" title="Reset legend to default icon" aria-label="Reset legend">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          </button>
+        </div>
         <div class="tabs" role="tablist" aria-label="Legend type">
           <button id="iconMode" class="tab active" type="button">Icon</button>
           <button id="uploadMode" class="tab" type="button">Upload SVG</button>
@@ -238,40 +349,12 @@
       </div>
 
       <div class="section">
-        <div class="label">Placement &amp; size</div>
-        <div class="row">
-          <label>Size</label>
-          <input id="size" type="range" min="3" max="16" step="0.1" value="8" />
-          <span class="val"><input id="sizeNum" type="number" step="0.1" /> mm</span>
+        <div class="section-head">
+          <span class="label">Colors (preview &amp; 3MF)</span>
+          <button id="resetColors" class="reset-btn" type="button" title="Reset colors to defaults" aria-label="Reset colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          </button>
         </div>
-        <div class="row">
-          <label>Depth</label>
-          <input id="depth" type="range" min="0.2" max="1.5" step="0.05" value="0.5" />
-          <span class="val"><input id="depthNum" type="number" step="0.05" /> mm</span>
-        </div>
-        <div class="row">
-          <label>Rotation</label>
-          <input id="rot" type="range" min="-180" max="180" step="1" value="0" />
-          <span class="val"><input id="rotNum" type="number" step="1" /> °</span>
-        </div>
-        <div class="row">
-          <label>Nudge X</label>
-          <input id="offx" type="range" min="-5" max="5" step="0.1" value="0" />
-          <span class="val"><input id="offxNum" type="number" step="0.1" /> mm</span>
-        </div>
-        <div class="row">
-          <label>Nudge Y</label>
-          <input id="offy" type="range" min="-5" max="5" step="0.1" value="0" />
-          <span class="val"><input id="offyNum" type="number" step="0.1" /> mm</span>
-        </div>
-        <label class="check"><input id="mirror" type="checkbox" /> Mirror horizontally</label>
-        <label class="check" title="Extrude the legend through the whole top wall and print the stem in the legend filament too — use a transparent filament so it lights up.">
-          <input id="through" type="checkbox" /> Enable Shine through
-        </label>
-      </div>
-
-      <div class="section">
-        <div class="label">Colors (preview &amp; 3MF)</div>
         <div class="colors">
           <div class="color"><input id="capColor" type="color" value="#1c1c1e" /> Keycap</div>
           <div class="color"><input id="logoColor" type="color" value="#f2f2f2" /> Legend</div>
@@ -282,6 +365,20 @@
         <button id="export" class="primary" disabled>Export 3MF</button>
         <div id="status">Loading…</div>
         <div class="meta" id="meta"></div>
+      </div>
+
+      <div class="section">
+        <div class="support-text">If you want to support the creator, you can buy me a Ko-fi ☕</div>
+        <a class="kofi-btn" href="https://ko-fi.com/vostoklabs" target="_blank" rel="noopener">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+            <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/>
+            <line x1="6" y1="2" x2="6" y2="4"/>
+            <line x1="10" y1="2" x2="10" y2="4"/>
+            <line x1="14" y1="2" x2="14" y2="4"/>
+          </svg>
+          Buy me a Ko-fi
+        </a>
       </div>
     </aside>
 

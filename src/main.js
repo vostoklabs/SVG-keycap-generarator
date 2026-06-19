@@ -114,15 +114,57 @@ const C = {
   offy: link('offy', 'offyNum', scheduleRegen),
 };
 $('mirror').addEventListener('change', scheduleRegen);
-$('through').addEventListener('change', () => {
+$('through').addEventListener('change', () => { applyThroughState(); scheduleRegen(); });
+$('capColor').addEventListener('input', () => { capMat.color.set($('capColor').value); });
+$('logoColor').addEventListener('input', () => { logoMat.color.set($('logoColor').value); });
+
+// ---------------------------------------------------------------- resets
+// Stock values for the per-section reset buttons. `size` is replaced at boot
+// once we know the sensible default for this cap's geometry.
+const DEFAULTS = {
+  size: 8, depth: 0.5, rot: 0, offx: 0, offy: 0,
+  mirror: false, through: false,
+  capColor: '#1c1c1e', logoColor: '#f2f2f2',
+};
+
+// Shine-through prints the legend through the wall, so depth no longer applies.
+function applyThroughState() {
   const on = $('through').checked;
   $('depth').disabled = on;
   $('depthNum').disabled = on;
   updateStemMaterial();
+}
+
+function resetPlacement() {
+  C.size.set(DEFAULTS.size);
+  C.depth.set(DEFAULTS.depth);
+  C.rot.set(DEFAULTS.rot);
+  C.offx.set(DEFAULTS.offx);
+  C.offy.set(DEFAULTS.offy);
+  $('mirror').checked = DEFAULTS.mirror;
+  $('through').checked = DEFAULTS.through;
+  applyThroughState();
   scheduleRegen();
-});
-$('capColor').addEventListener('input', () => { capMat.color.set($('capColor').value); });
-$('logoColor').addEventListener('input', () => { logoMat.color.set($('logoColor').value); });
+}
+
+function resetColors() {
+  $('capColor').value = DEFAULTS.capColor;
+  $('logoColor').value = DEFAULTS.logoColor;
+  capMat.color.set(DEFAULTS.capColor);
+  logoMat.color.set(DEFAULTS.logoColor);
+}
+
+function resetLegend() {
+  if (currentMode !== 'icon') setLegendMode('icon');
+  searchEl.value = '';
+  rebuildGallery();
+  const first = defaultLucideIcon();
+  if (first) selectIcon(first.el || galleryEl.firstElementChild, first.getText, first.name);
+}
+
+$('resetPlacement').addEventListener('click', resetPlacement);
+$('resetColors').addEventListener('click', resetColors);
+$('resetLegend').addEventListener('click', resetLegend);
 
 // ---------------------------------------------------------------- geometry
 function currentOpts() {
@@ -499,10 +541,11 @@ $('export').addEventListener('click', () => {
     camera.position.copy(target).add(new THREE.Vector3(20, 17, 28));
     resize();
 
-    // sensible default size for this cap
+    // sensible default size for this cap (also the value the placement reset restores)
     const room = Math.min(meta.topExtent[0], meta.topExtent[1]);
     C.size.setMax((room * 0.95).toFixed(1));
-    C.size.set(Math.round(room * 0.5 * 10) / 10);
+    DEFAULTS.size = Math.round(room * 0.5 * 10) / 10;
+    C.size.set(DEFAULTS.size);
 
     $('meta').textContent = `Cap ${(meta.bbox.max[0] - meta.bbox.min[0]).toFixed(1)}×${(meta.bbox.max[1] - meta.bbox.min[1]).toFixed(1)}×${meta.topZ.toFixed(1)} mm · ${meta.triangles} tris · from ${meta.generatedFrom}`;
 
