@@ -247,6 +247,14 @@
       }
       button.primary:hover { filter: brightness(1.07); }
       button.primary:disabled { opacity: .5; cursor: default; }
+      button.secondary {
+        width: 100%; padding: 10px; margin-top: 8px; border-radius: 9px; cursor: pointer;
+        background: transparent; color: var(--text); border: 1px solid var(--line);
+        font: inherit; font-weight: 600; font-size: 13px;
+        transition: border-color .12s, color .12s;
+      }
+      button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+      button.secondary:disabled { opacity: .5; cursor: default; }
       #status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; }
       #status.warn { color: #e3b341; }
       #status.err { color: #f0726a; }
@@ -373,6 +381,10 @@
               <input id="fontUpload" type="file" accept=".ttf,.otf,.json,font/ttf,font/otf,application/json" />
             </label>
           </div>
+          <div class="switch-block">
+            <button id="alphabetSet" class="primary" type="button">Get full alphabet set (A–Z)</button>
+            <p class="switch-help" id="alphabetHelp">Generates 26 keycaps (A–Z) in the current font &amp; settings, zipped as 3MF files.</p>
+          </div>
         </div>
       </div>
 
@@ -391,6 +403,7 @@
 
       <div class="section">
         <button id="export" class="primary" disabled>Export 3MF</button>
+        <button id="exportBlank" class="secondary" type="button" disabled>Export blank keycap</button>
         <div id="status">Loading…</div>
         <div class="meta" id="meta"></div>
       </div>

@@ -7,6 +7,7 @@ import { buildBodies } from './geometry.js';
 import { initManifold, geomToManifold, manifoldToGeom, creaseNormals } from './manifold.js';
 import { buildThreeMF } from './export3mf.js';
 import { LUCIDE_ICONS, buildSvg, svgDataUrl } from './lucideIcons.js';
+import { zipSync } from 'fflate';
 
 const $ = (id) => document.getElementById(id);
 const busyEl = $('busy');
@@ -566,17 +567,15 @@ $('upload').addEventListener('change', async (e) => {
 });
 
 // ---------------------------------------------------------------- export
-$('export').addEventListener('click', () => {
-  if (!lastBodies) return;
-  const capColor = $('capColor').value;
-  const logoColor = $('logoColor').value;
-  const through = $('through').checked;
-
+// Assemble the 3MF body list (cap, legend, and stem) for one set of carved bodies.
+// Shared by the single-cap export and the full-alphabet batch so colour/filament
+// assignment stays identical. The stem rides on the legend filament in shine-through,
+// otherwise the keycap filament.
+function buildExportParts(bodies, capColor, logoColor, through) {
   const parts = [
-    { name: 'Keycap', color: capColor, extruder: 1, geom: lastBodies.keycapGeometry },
-    { name: 'Legend', color: logoColor, extruder: 2, geom: lastBodies.logoGeometry },
+    { name: 'Keycap', color: capColor, extruder: 1, geom: bodies.keycapGeometry },
+    { name: 'Legend', color: logoColor, extruder: 2, geom: bodies.logoGeometry },
   ];
-  // Stem rides on the legend filament in shine-through, otherwise the keycap filament.
   if (stemGeometry) {
     parts.push({
       name: 'Stem',
@@ -585,7 +584,14 @@ $('export').addEventListener('click', () => {
       geom: stemGeometry,
     });
   }
+  return parts;
+}
 
+$('export').addEventListener('click', () => {
+  if (!lastBodies) return;
+  const parts = buildExportParts(
+    lastBodies, $('capColor').value, $('logoColor').value, $('through').checked
+  );
   const blob = buildThreeMF(parts);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -594,6 +600,97 @@ $('export').addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
   setStatus('Exported 3MF ✓  Open in your slicer and assign two filaments.');
 });
+
+// Export the bare cap (uncarved shell + stem) in a single colour — no legend.
+// Works for any size; uses the loaded shell directly (already a clean indexed solid).
+$('exportBlank').addEventListener('click', () => {
+  if (!shellGeometry) return;
+  const capColor = $('capColor').value;
+  const parts = [{ name: 'Keycap', color: capColor, extruder: 1, geom: shellGeometry }];
+  if (stemGeometry) parts.push({ name: 'Stem', color: capColor, extruder: 1, geom: stemGeometry });
+
+  const blob = buildThreeMF(parts);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const sizeLabel = ($('unitSelect').value || '').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  a.download = `keycap-blank${sizeLabel ? '-' + sizeLabel : ''}.3mf`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus('Exported blank keycap ✓  Single-colour cap with no legend.');
+});
+
+// -------------------------------------------------------- full alphabet set
+// Batch-generate A–Z keycaps in the current font + placement/colour settings and
+// download them as a single ZIP of 3MFs. 1u-only for now (button is disabled on
+// other sizes). Each letter is carved with the same buildBodies path as the live
+// preview, so what you set up for one letter is what every cap in the pack gets.
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const alphabetBtn = $('alphabetSet');
+const alphabetHelp = $('alphabetHelp');
+
+// The set only makes sense for a 1u cap right now; reflect that on the button.
+function updateAlphabetAvailability() {
+  const ok = currentUnit === 1;
+  alphabetBtn.disabled = !ok || running;
+  alphabetHelp.textContent = ok
+    ? 'Generates 26 keycaps (A–Z) in the current font & settings, zipped as 3MF files.'
+    : 'Full alphabet set is available for the 1u keycap only — switch size to 1u to enable.';
+}
+
+async function generateAlphabetSet() {
+  if (currentUnit !== 1 || !meta || !shellGeometry || running) return;
+
+  const fontId = $('fontSelect').value;
+  const fontName = FONT_OPTIONS.find((f) => f.id === fontId)?.name || 'font';
+  const opts = currentOpts();
+  const capColor = $('capColor').value;
+  const logoColor = $('logoColor').value;
+  const through = $('through').checked;
+
+  // Hold the regen lock so live preview rebuilds don't run Manifold concurrently.
+  clearTimeout(regenTimer);
+  running = true;
+  alphabetBtn.disabled = true;
+  busyEl.style.display = 'block';
+  const files = {};
+
+  try {
+    for (let i = 0; i < ALPHABET.length; i++) {
+      const ch = ALPHABET[i];
+      setStatus(`Generating alphabet set… ${ch} (${i + 1}/26)`);
+      busyEl.textContent = `generating ${ch} (${i + 1}/26)…`;
+      await new Promise((r) => setTimeout(r, 0)); // let the spinner/status paint
+
+      const legend = parseLetter(ch, fontId, 1);
+      const bodies = await buildBodies(shellGeometry, meta, legend, opts);
+      const parts = buildExportParts(bodies, capColor, logoColor, through);
+      files[`keycap-${ch}.3mf`] = new Uint8Array(await buildThreeMF(parts).arrayBuffer());
+      bodies.keycapGeometry.dispose();
+      bodies.logoGeometry.dispose();
+    }
+
+    // 3MFs are already deflated zips — store (level 0) rather than re-compress.
+    const zipped = zipSync(files, { level: 0 });
+    const fontSlug = fontName.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([zipped], { type: 'application/zip' }));
+    a.download = `keycap-alphabet-${fontSlug}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus('Exported full alphabet set ✓  26 keycaps (A–Z) zipped — open each 3MF in your slicer.');
+  } catch (e) {
+    console.error(e);
+    setStatus('Could not generate the alphabet set (try a simpler font or smaller size).', 'err');
+  } finally {
+    busyEl.textContent = 'generating…';
+    busyEl.style.display = 'none';
+    running = false;
+    updateAlphabetAvailability();
+    scheduleRegen(); // refresh the live preview to the current inputs after the batch
+  }
+}
+
+alphabetBtn.addEventListener('click', generateAlphabetSet);
 
 // ---------------------------------------------------------------- keycap swap
 // Install a freshly loaded keycap: dispose the old geometry, clean the new stem,
@@ -674,6 +771,7 @@ function setKeycap(kc) {
   setNudgeRange('offy', 'offyNum', Math.max(5, Math.ceil((meta.bbox.max[1] - meta.bbox.min[1]) / 2)));
 
   applyLetterLimit(); // longer legends on bigger caps
+  $('exportBlank').disabled = false; // blank export needs only the shell, ready now
 
   $('meta').textContent = `Cap ${(meta.bbox.max[0] - meta.bbox.min[0]).toFixed(1)}×${(meta.bbox.max[1] - meta.bbox.min[1]).toFixed(1)}×${meta.topZ.toFixed(1)} mm · ${meta.triangles} tris · from ${meta.generatedFrom}`;
 }
@@ -700,7 +798,11 @@ async function switchKeycap(file, label) {
 
 unitSelect.addEventListener('change', () => {
   const entry = keycapManifest.find((k) => k.id === unitSelect.value);
-  if (entry) { currentUnit = entry.unit || 1; switchKeycap(entry.file, entry.label); }
+  if (entry) {
+    currentUnit = entry.unit || 1;
+    updateAlphabetAvailability();
+    switchKeycap(entry.file, entry.label);
+  }
 });
 
 // ---------------------------------------------------------------- boot
@@ -731,6 +833,7 @@ unitSelect.addEventListener('change', () => {
     }
 
     setKeycap(await loadKeycap(defaultFile));
+    updateAlphabetAvailability();
 
     rebuildGallery();
     loadBundledSvgs();
