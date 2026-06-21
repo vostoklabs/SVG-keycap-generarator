@@ -8,9 +8,12 @@ two filaments.
 
 ```bash
 npm install
-npm run convert   # STEP files -> public/keycaps/*.json  (only needed once, or when you add/swap a .stp)
 npm run dev       # opens the app
 ```
+
+The converted keycaps (`public/keycaps/*.json`) are committed, so a fresh clone runs
+without a build step. You only need `npm run convert` if you change the source CAD — see
+[Add or swap keycap sizes](#add-or-swap-keycap-sizes).
 
 ## Use
 
@@ -48,7 +51,11 @@ Use **Import font** in Letter mode to load a local `.ttf`, `.otf`, or Three.js
 
 ## Add or swap keycap sizes
 
-Drop `.stp`/`.step` files into `Step files of keycaps/` and re-run `npm run convert`.
+The source `.stp` CAD files are **not** tracked in the repo (they're large and redundant
+once converted) — only the generated `public/keycaps/*.json` are committed. To add or
+change a size, drop `.stp`/`.step` files into `Step files of keycaps/` (git-ignored) and
+re-run `npm run convert`, then commit the updated JSON.
+
 Each file becomes a size in the dropdown. The unit and variant are read from the file
 name: `1,25 u.stp` → "1.25u", `2 u, 3 stems.stp` → "2u (3 stems)", `6,5 u spacebar.stp`
 → "6.5u Spacebar" (use a comma for the decimal). Each STEP should hold the cap shell plus

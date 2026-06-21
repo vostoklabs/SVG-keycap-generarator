@@ -21,7 +21,7 @@ function setStatus(msg, kind = '') {
 const viewport = $('viewport');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setClearColor(0x15171c);
+renderer.setClearColor(0x3a3f47); // grey viewport so the cap + grid read clearly
 viewport.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -45,8 +45,8 @@ const gridMat = new THREE.ShaderMaterial({
   depthWrite: false,
   extensions: { derivatives: true }, // fwidth (no-op/core on WebGL2)
   uniforms: {
-    uColor:  { value: new THREE.Color(0x262b34) },
-    uColor2: { value: new THREE.Color(0x3a4150) },
+    uColor:  { value: new THREE.Color(0x4d535d) },
+    uColor2: { value: new THREE.Color(0x626a76) },
     uSize1:  { value: GRID_MINOR },
     uSize2:  { value: GRID_MAJOR },
     uFade:   { value: 120 },
