@@ -72,9 +72,13 @@
       .hint-text {
         font-size: 12px; color: var(--muted); margin: 0 0 10px; line-height: 1.4;
       }
+      #uploadPanel:not([hidden]) { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
       #uploadGallery {
         display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px;
+        flex: 0 1 auto; min-height: 0; overflow-y: auto; align-content: start; padding-right: 4px;
       }
+      #uploadGallery::-webkit-scrollbar { width: 8px; }
+      #uploadGallery::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
       #uploadGalleryEmpty {
         grid-column: 1 / -1; padding: 12px; text-align: center;
         color: var(--muted); font-size: 12px;
@@ -258,7 +262,7 @@
 
       <div class="callout">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span>For the best quality printed keycap, please use the print profile and instructions available on <a class="hint-link" href="https://makerworld.com/en/@Vostok_Labs/upload" target="_blank" rel="noopener">MakerWorld</a>.</span>
+        <span>For the best quality printed keycap, please use the print profile and instructions available on <a class="hint-link" href="https://makerworld.com/en/models/2959969" target="_blank" rel="noopener">MakerWorld</a>.</span>
       </div>
 
       <div class="section">
@@ -392,7 +396,7 @@
       </div>
 
       <div class="section">
-        <p class="support-free">You can support me for free by <a href="https://makerworld.com/en/@Vostok_Labs" target="_blank" rel="noopener">downloading the model on MakerWorld</a>, giving it a like and a boost, and <a href="https://makerworld.com/en/@Vostok_Labs" target="_blank" rel="noopener">following my page on MakerWorld</a>.</p>
+        <p class="support-free">You can support me for free by <a href="https://makerworld.com/en/models/2959969" target="_blank" rel="noopener">downloading the model on MakerWorld</a>, giving it a like and a boost, and <a href="https://makerworld.com/en/@Vostok_Labs" target="_blank" rel="noopener">following my page on MakerWorld</a>.</p>
         <div class="support-text">Or buy me a Ko-fi ☕</div>
         <a class="kofi-btn" href="https://ko-fi.com/vostoklabs" target="_blank" rel="noopener">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
