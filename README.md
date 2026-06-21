@@ -4,6 +4,15 @@ Local web app to drop an SVG icon or typed letter onto a keycap and export a
 **two-color 3MF** (keycap body + legend body) for printing the cap face-down in
 two filaments.
 
+![Keycap Legend Generator — web UI](docs/main-screen.png)
+
+Printed results (use the [MakerWorld print profile](https://makerworld.com/en/@Vostok_Labs)
+for best quality):
+
+| All sizes | Icons & SVG logos | Shine-through |
+| --- | --- | --- |
+| ![Every keycap size printed](docs/all-sizes.jpg) | ![Icon and SVG legends](docs/icons-and-svg.jpg) | ![Shine-through legend lit up](docs/shine-through.jpg) |
+
 ## Run
 
 ```bash

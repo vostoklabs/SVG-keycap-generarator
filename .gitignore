@@ -6,3 +6,6 @@ dist/
 # Source CAD — not tracked; the converted public/keycaps/*.json are the committed artifact.
 # Re-add your .stp/.step files here and run `npm run convert` to regenerate them.
 Step files of keycaps/
+
+# Full-res originals for the README shots; web-optimized copies live in docs/.
+Media/
