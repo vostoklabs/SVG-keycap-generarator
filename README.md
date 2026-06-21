@@ -8,16 +8,17 @@ two filaments.
 
 ```bash
 npm install
-npm run convert   # STEP -> public/keycap.json  (only needed once, or when you swap the .stp)
+npm run convert   # STEP files -> public/keycaps/*.json  (only needed once, or when you add/swap a .stp)
 npm run dev       # opens the app
 ```
 
 ## Use
 
-1. Pick an icon from the gallery (or **Upload SVG**) or switch to **Letter** and choose a font.
-2. Set **Size**, **Depth** (default 0.5 mm), rotation and nudge. The legend is centered on the dish.
-3. Choose the two colors (used in the preview and written into the 3MF).
-4. **Export 3MF** → open in PrusaSlicer / OrcaSlicer / Bambu Studio.
+1. Choose the **Keycap size** (1u … spacebars) from the dropdown in the left panel.
+2. Pick an icon from the gallery (or **Upload SVG**) or switch to **Letter** and choose a font.
+3. Set **Size**, **Depth** (default 0.5 mm), rotation and nudge. The legend is centered on the dish.
+4. Choose the two colors (used in the preview and written into the 3MF).
+5. **Export 3MF** → open in PrusaSlicer / OrcaSlicer / Bambu Studio.
 
 In the slicer the file loads as one object with two parts (*Keycap* + *Legend*),
 already colored. Assign a filament to each, then orient the cap **top-face-down**
@@ -25,8 +26,10 @@ to print the legend color as the first layers.
 
 ## How it works
 
-- `scripts/convert-keycap.mjs` tessellates the STEP solid (via `occt-import-js`) into
-  `public/keycap.json` plus metadata (bounding box, top Z, dish bottom).
+- `scripts/convert-keycap.mjs` tessellates every STEP file in `Step files of keycaps/`
+  (via `occt-import-js`) into one `public/keycaps/<id>.json` each — shell + stem(s) plus
+  metadata (bounding box, top Z, dish bottom) — and a `public/keycaps/index.json` manifest
+  that fills the size dropdown. The default unit is also written to `public/keycap.json`.
 - The chosen SVG icon or generated letter outline is extruded into a tall prism over
   the legend footprint. Two booleans (`three-bvh-csg`) split the cap:
   `cap ∩ prism` → the legend body (its top **is** the real
@@ -43,6 +46,10 @@ Single-color outline icons (e.g. [Simple Icons](https://simpleicons.org)) work b
 Use **Import font** in Letter mode to load a local `.ttf`, `.otf`, or Three.js
 `.typeface.json` font. Imported fonts are available for the current browser session.
 
-## Swap the keycap
+## Add or swap keycap sizes
 
-Replace the `.stp` in the project root and re-run `npm run convert`.
+Drop `.stp`/`.step` files into `Step files of keycaps/` and re-run `npm run convert`.
+Each file becomes a size in the dropdown. The unit and variant are read from the file
+name: `1,25 u.stp` → "1.25u", `2 u, 3 stems.stp` → "2u (3 stems)", `6,5 u spacebar.stp`
+→ "6.5u Spacebar" (use a comma for the decimal). Each STEP should hold the cap shell plus
+its switch stem(s) as separate solids.

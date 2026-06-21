@@ -37,7 +37,57 @@ const fill = new THREE.DirectionalLight(0x9fb6ff, 0.5);
 fill.position.set(-18, 10, -14);
 scene.add(fill);
 
-const grid = new THREE.GridHelper(60, 30, 0x3a4150, 0x262b34);
+// Infinite ground grid: a big camera-following plane whose shader draws grid lines from
+// world XZ and fades with distance, so it reads as endless at any cap size (1u .. spacebar).
+const GRID_MINOR = 5, GRID_MAJOR = 25, GRID_EXTENT = 12000;
+const gridMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  extensions: { derivatives: true }, // fwidth (no-op/core on WebGL2)
+  uniforms: {
+    uColor:  { value: new THREE.Color(0x262b34) },
+    uColor2: { value: new THREE.Color(0x3a4150) },
+    uSize1:  { value: GRID_MINOR },
+    uSize2:  { value: GRID_MAJOR },
+    uFade:   { value: 120 },
+    uCam:    { value: new THREE.Vector3() },
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorld = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    varying vec3 vWorld;
+    uniform vec3 uColor; uniform vec3 uColor2;
+    uniform float uSize1; uniform float uSize2; uniform float uFade;
+    uniform vec3 uCam;
+    float gridLine(vec2 p, float size) {
+      vec2 r = p / size;
+      vec2 g = abs(fract(r - 0.5) - 0.5) / fwidth(r);
+      return 1.0 - min(min(g.x, g.y), 1.0);
+    }
+    void main() {
+      vec2 p = vWorld.xz;
+      float d = 1.0 - clamp(length(p - uCam.xz) / uFade, 0.0, 1.0);
+      float g1 = gridLine(p, uSize1);
+      float g2 = gridLine(p, uSize2);
+      float a = max(g1 * 0.45, g2) * pow(d, 2.0);
+      if (a <= 0.001) discard;
+      vec3 col = mix(uColor, uColor2, step(0.5, g2));
+      gl_FragColor = vec4(col, a);
+    }
+  `,
+});
+const grid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), gridMat);
+grid.rotation.x = -Math.PI / 2;
+grid.scale.set(GRID_EXTENT, GRID_EXTENT, 1);
+grid.frustumCulled = false;
+grid.renderOrder = -1;
 scene.add(grid);
 
 // Native keycap space is Z-up; rotate the display group so it looks right in Y-up.
@@ -71,6 +121,16 @@ new ResizeObserver(resize).observe(viewport);
 (function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  // Follow the camera (snapped to the major spacing) and fade relative to zoom so the
+  // grid always extends past the cap, whether it's a 1u or a 6.5u spacebar.
+  const dist = camera.position.distanceTo(controls.target);
+  gridMat.uniforms.uFade.value = Math.max(dist * 3, 60);
+  gridMat.uniforms.uCam.value.copy(camera.position);
+  grid.position.set(
+    Math.round(camera.position.x / GRID_MAJOR) * GRID_MAJOR,
+    0,
+    Math.round(camera.position.z / GRID_MAJOR) * GRID_MAJOR
+  );
   renderer.render(scene, camera);
 })();
 
@@ -82,6 +142,7 @@ let currentLegend = null;   // { contours, box, name }
 let lastBodies = null;      // { keycapGeometry, logoGeometry } for export
 let lastIconSelection = null;
 let currentMode = 'icon';
+let currentUnit = 1;        // size of the active keycap (drives the letter limit)
 
 // debug handles (harmless; used for automated verification)
 window.__app = {
@@ -237,6 +298,7 @@ async function selectIcon(el, getText, name) {
   try {
     currentLegend = { ...parseSvg(await getText()), name };
     lastIconSelection = { el, getText, name };
+    updateSizeMax();
     doRegen();
   } catch (e) {
     console.error(e);
@@ -272,10 +334,27 @@ function setLegendMode(mode) {
   }
 }
 
+// Bigger caps fit longer legends; 1u stays at 4 characters, scaling up with the unit.
+function letterMaxLen(unit) {
+  return Math.max(4, Math.round((unit || 1) * 4));
+}
+
+// Push the current unit's character cap onto the letter input, trimming any overflow.
+function applyLetterLimit() {
+  const input = $('letterText');
+  const max = letterMaxLen(currentUnit);
+  input.maxLength = max;
+  if (input.value.length > max) {
+    input.value = input.value.slice(0, max);
+    if (currentMode === 'letter') selectLetter();
+  }
+}
+
 function selectLetter() {
   document.querySelectorAll('.icon.active').forEach((n) => n.classList.remove('active'));
   try {
-    currentLegend = parseLetter($('letterText').value, $('fontSelect').value);
+    currentLegend = parseLetter($('letterText').value, $('fontSelect').value, letterMaxLen(currentUnit));
+    updateSizeMax();
     setStatus('Generating letter…');
     scheduleRegen();
   } catch (e) {
@@ -515,39 +594,142 @@ $('export').addEventListener('click', () => {
   setStatus('Exported 3MF ✓  Open in your slicer and assign two filaments.');
 });
 
+// ---------------------------------------------------------------- keycap swap
+// Install a freshly loaded keycap: dispose the old geometry, clean the new stem,
+// re-frame the camera, and reset the size to a sensible default for this cap.
+// Called at boot and whenever the size dropdown changes. (Manifold must be ready.)
+// Max legend size: a single icon (≈square) is capped by the cap's short side, but a wide
+// legend (multi-letter text) can stretch along the cap's long side. Scale the ceiling by the
+// legend's aspect ratio so long words on wide caps/spacebars can use the room available.
+function updateSizeMax() {
+  if (!meta) return;
+  const capLong = Math.max(meta.topExtent[0], meta.topExtent[1]);
+  const capShort = Math.min(meta.topExtent[0], meta.topExtent[1]);
+  let maxW = capShort; // square / no legend yet
+  const b = currentLegend?.box;
+  if (b) {
+    const lng = Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+    const sht = Math.min(b.max.x - b.min.x, b.max.y - b.min.y);
+    const aspect = sht > 1e-6 ? lng / sht : 1;
+    maxW = Math.min(capLong, capShort * aspect);
+  }
+  C.size.setMax((maxW * 0.95).toFixed(1));
+}
+
+// Symmetric ± range for a nudge slider + its number box.
+function setNudgeRange(rangeId, numId, m) {
+  $(rangeId).min = -m; $(rangeId).max = m;
+  $(numId).min = -m; $(numId).max = m;
+}
+
+function setKeycap(kc) {
+  // Free everything tied to the previous cap before swapping references.
+  shellGeometry?.dispose();
+  stemGeometry?.dispose();
+  capMesh.geometry?.dispose();
+  stemMesh.geometry?.dispose();
+
+  shellGeometry = kc.shellGeometry;
+  meta = kc.meta;
+  capMesh.geometry = shellGeometry.clone(); // shown until the first regen carves it
+
+  // Run the stem(s) through Manifold once so they're a watertight, welded, manifold solid
+  // (the raw STEP tessellation has split vertices) — clean for both preview and 3MF.
+  if (kc.stemGeometry) {
+    const m = geomToManifold(kc.stemGeometry);
+    stemGeometry = manifoldToGeom(m); // clean indexed solid kept for export
+    m.delete();
+    kc.stemGeometry.dispose();
+    stemMesh.geometry = creaseNormals(stemGeometry); // creased copy for preview
+  } else {
+    stemGeometry = null;
+    stemMesh.geometry = undefined;
+  }
+  updateStemMaterial();
+
+  // Centre every cap on the world origin so it sits on the grid regardless of its native
+  // STEP coordinates (the larger caps are modelled off-origin). The group holds cap + legend
+  // + stem, so they all shift together. Group is Z-up rotated; position is world space.
+  group.position.set(-meta.center[0], 0, meta.center[1]);
+
+  // Frame the camera on the (now origin-centred) cap; pull the distance back proportionally
+  // so wide caps (spacebars) still fit the viewport.
+  const spanX = meta.bbox.max[0] - meta.bbox.min[0];
+  const spanY = meta.bbox.max[1] - meta.bbox.min[1];
+  const dist = Math.max(Math.max(spanX, spanY) * 1.4, 34);
+  const target = new THREE.Vector3(0, meta.topZ / 2, 0);
+  controls.target.copy(target);
+  camera.position.copy(target).add(new THREE.Vector3(0.5, 0.45, 0.75).multiplyScalar(dist));
+  resize();
+
+  // sensible default size for this cap (also the value the placement reset restores)
+  const room = Math.min(meta.topExtent[0], meta.topExtent[1]);
+  DEFAULTS.size = Math.round(room * 0.5 * 10) / 10;
+  C.size.set(DEFAULTS.size);
+  updateSizeMax(); // legend-aspect-aware ceiling (wide text can use the cap's length)
+
+  // Nudge range follows the cap so the legend can reach the edges of wide caps/spacebars.
+  setNudgeRange('offx', 'offxNum', Math.max(5, Math.ceil((meta.bbox.max[0] - meta.bbox.min[0]) / 2)));
+  setNudgeRange('offy', 'offyNum', Math.max(5, Math.ceil((meta.bbox.max[1] - meta.bbox.min[1]) / 2)));
+
+  applyLetterLimit(); // longer legends on bigger caps
+
+  $('meta').textContent = `Cap ${(meta.bbox.max[0] - meta.bbox.min[0]).toFixed(1)}×${(meta.bbox.max[1] - meta.bbox.min[1]).toFixed(1)}×${meta.topZ.toFixed(1)} mm · ${meta.triangles} tris · from ${meta.generatedFrom}`;
+}
+
+const unitSelect = $('unitSelect');
+let keycapManifest = [];
+
+// Load a different keycap size and rebuild the current legend on it.
+async function switchKeycap(file, label) {
+  busyEl.style.display = 'block';
+  unitSelect.disabled = true;
+  try {
+    const kc = await loadKeycap(file);
+    setKeycap(kc);
+    if (currentLegend) scheduleRegen(); else busyEl.style.display = 'none';
+  } catch (e) {
+    console.error(e);
+    busyEl.style.display = 'none';
+    setStatus(`Could not load ${label || 'this size'}.`, 'err');
+  } finally {
+    unitSelect.disabled = false;
+  }
+}
+
+unitSelect.addEventListener('change', () => {
+  const entry = keycapManifest.find((k) => k.id === unitSelect.value);
+  if (entry) { currentUnit = entry.unit || 1; switchKeycap(entry.file, entry.label); }
+});
+
 // ---------------------------------------------------------------- boot
 (async function boot() {
   try {
     await initManifold(); // engine needed up-front to clean the stem body
-    const kc = await loadKeycap();
-    shellGeometry = kc.shellGeometry;
-    meta = kc.meta;
-    capMesh.geometry = shellGeometry.clone();
 
-    // Run the stem through Manifold once so it's a watertight, welded, manifold solid
-    // (the raw STEP tessellation has split vertices) — clean for both preview and 3MF.
-    if (kc.stemGeometry) {
-      const m = geomToManifold(kc.stemGeometry);
-      stemGeometry = manifoldToGeom(m); // clean indexed solid kept for export
-      m.delete();
-      kc.stemGeometry.dispose();
-      stemMesh.geometry = creaseNormals(stemGeometry); // creased copy for preview
+    // Pull the size manifest; fall back to the single-cap file if it isn't there.
+    const index = await fetch('keycaps/index.json')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+
+    let defaultFile = 'keycap.json';
+    if (index?.keycaps?.length) {
+      keycapManifest = index.keycaps;
+      for (const k of keycapManifest) {
+        const opt = document.createElement('option');
+        opt.value = k.id;
+        opt.textContent = k.label;
+        unitSelect.appendChild(opt);
+      }
+      const def = keycapManifest.find((k) => k.id === index.default) || keycapManifest[0];
+      unitSelect.value = def.id;
+      defaultFile = def.file;
+      currentUnit = def.unit || 1;
+    } else {
+      unitSelect.closest('.section').style.display = 'none'; // no sizes — hide the picker
     }
-    updateStemMaterial();
 
-    // frame the camera on the cap (native -> display: (x,y,z) -> (x, z, -y))
-    const target = new THREE.Vector3(meta.center[0], meta.topZ / 2, -meta.center[1]);
-    controls.target.copy(target);
-    camera.position.copy(target).add(new THREE.Vector3(20, 17, 28));
-    resize();
-
-    // sensible default size for this cap (also the value the placement reset restores)
-    const room = Math.min(meta.topExtent[0], meta.topExtent[1]);
-    C.size.setMax((room * 0.95).toFixed(1));
-    DEFAULTS.size = Math.round(room * 0.5 * 10) / 10;
-    C.size.set(DEFAULTS.size);
-
-    $('meta').textContent = `Cap ${(meta.bbox.max[0] - meta.bbox.min[0]).toFixed(1)}×${(meta.bbox.max[1] - meta.bbox.min[1]).toFixed(1)}×${meta.topZ.toFixed(1)} mm · ${meta.triangles} tris · from ${meta.generatedFrom}`;
+    setKeycap(await loadKeycap(defaultFile));
 
     rebuildGallery();
     loadBundledSvgs();

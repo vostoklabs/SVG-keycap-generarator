@@ -79,8 +79,8 @@ export async function importFontFile(file) {
   return option;
 }
 
-export function parseLetter(text, fontId) {
-  const value = Array.from((text || '').trim()).slice(0, 3).join('');
+export function parseLetter(text, fontId, maxLen = 4) {
+  const value = Array.from((text || '').trim()).slice(0, maxLen).join('');
   if (!value) throw new Error('Type a letter first.');
 
   const option = FONT_OPTIONS.find((font) => font.id === fontId) || FONT_OPTIONS[0];
