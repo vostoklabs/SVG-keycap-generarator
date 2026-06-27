@@ -38,6 +38,9 @@ if (!stepFiles.length) {
 //           "6,5 u spacebar" -> 6.5u Spacebar
 function parseKeycapName(file) {
   const base = basename(file).replace(/\.(stp|step)$/i, '');
+  if (/homing\s*bump/i.test(base)) {
+    return { id: 'homing-bump', label: 'Homing Bump', unit: 0, isSpacebar: false, stemCount: 0, isHomingBump: true };
+  }
   // Leading number uses comma as the decimal separator ("1,25 u").
   const m = base.match(/^\s*(\d+(?:,\d+)?)\s*u/i);
   const unit = m ? parseFloat(m[1].replace(',', '.')) : 0;
@@ -187,7 +190,9 @@ for (const stepFile of stepFiles) {
   console.log(`Reading ${stepFile}  ->  ${info.id} ("${info.label}")`);
   const { out } = convertStep(join(stepDir, stepFile), stepFile);
   writeFileSync(join(outDir, `${info.id}.json`), JSON.stringify(out));
-  manifest.push({ ...info, file: `keycaps/${info.id}.json`, out });
+  if (!info.isHomingBump) {
+    manifest.push({ ...info, file: `keycaps/${info.id}.json`, out });
+  }
 }
 
 // Order the dropdown: by unit, then plain < stem-count variants < spacebar.

@@ -140,6 +140,7 @@ new ResizeObserver(resize).observe(viewport);
 let meta = null;            // keycap metadata from convert step
 let shellGeometry = null;   // cap shell geometry, stem removed (native mm)
 let stemGeometry = null;    // switch stem body (constant; recoloured, never carved)
+let homingBumpGeometry = null; // homing bump geometry
 let currentLegend = null;   // { contours, box, name }
 let lastBodies = null;      // { keycapGeometry, logoGeometry } for export
 let lastIconSelection = null;
@@ -177,6 +178,7 @@ const C = {
   offy: link('offy', 'offyNum', scheduleRegen),
 };
 $('mirror').addEventListener('change', scheduleRegen);
+$('homingBump').addEventListener('change', scheduleRegen);
 // Shine-through and single-colour are mutually exclusive: one prints the legend in a second
 // (transparent) filament, the other engraves it in the single cap filament.
 $('through').addEventListener('change', () => {
@@ -195,7 +197,7 @@ $('logoColor').addEventListener('input', () => { logoMat.color.set($('logoColor'
 // once we know the sensible default for this cap's geometry.
 const DEFAULTS = {
   size: 8, depth: 0.5, rot: 0, offx: 0, offy: 0,
-  mirror: false, through: false, single: false,
+  mirror: false, through: false, single: false, homingBump: false,
   capColor: '#1c1c1e', logoColor: '#f2f2f2',
 };
 
@@ -218,6 +220,7 @@ function resetPlacement() {
   $('mirror').checked = DEFAULTS.mirror;
   $('through').checked = DEFAULTS.through;
   $('single').checked = DEFAULTS.single;
+  $('homingBump').checked = DEFAULTS.homingBump;
   applyModeFlags();
   scheduleRegen();
 }
@@ -252,6 +255,8 @@ function currentOpts() {
     mirror: $('mirror').checked,
     through: $('through').checked,
     singleColor: $('single').checked,
+    homingBump: $('homingBump').checked,
+    homingBumpGeom: homingBumpGeometry,
   };
 }
 
@@ -861,6 +866,12 @@ unitSelect.addEventListener('change', () => {
       unitSelect.closest('.section').style.display = 'none'; // no sizes — hide the picker
     }
 
+    try {
+      const hb = await loadKeycap('keycaps/homing-bump.json');
+      homingBumpGeometry = hb.shellGeometry;
+    } catch (e) {
+      console.error('Failed to load homing bump geometry:', e);
+    }
     setKeycap(await loadKeycap(defaultFile));
     updateAlphabetAvailability();
 

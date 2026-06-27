@@ -114,7 +114,21 @@ export async function buildBodies(capGeom, meta, icon, opts) {
   const bottomZ = opts.through ? capBottomZ - 1 : lo - opts.depth;
   const height  = meta.topZ + 3 - bottomZ;
 
-  const cap = geomToManifold(capGeom);
+  let cap = geomToManifold(capGeom);
+
+  if (opts.homingBump && opts.homingBumpGeom) {
+    const homingBumpManifold = geomToManifold(opts.homingBumpGeom);
+    // Align homing bump from 1u coordinate system to current keycap's center and topZ height.
+    const translateX = meta.center[0] - 0.7617388490000003;
+    const translateY = meta.center[1] - (-0.5153479989999994);
+    const translateZ = meta.topZ - 11.8322514;
+    const translatedBump = homingBumpManifold.translate([translateX, translateY, translateZ]);
+    const mergedCap = cap.add(translatedBump);
+    cap.delete();
+    homingBumpManifold.delete();
+    translatedBump.delete();
+    cap = mergedCap;
+  }
 
   // Build the prism: start with fill contours (if any), then union in each stroke solid.
   let prism = contours.length ? extrudePrism(contours, bottomZ, height) : null;
